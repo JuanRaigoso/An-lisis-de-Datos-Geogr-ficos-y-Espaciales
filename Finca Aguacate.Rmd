@@ -1,0 +1,351 @@
+---
+title: |
+  <div style="text-align: center;"><strong>Análisis de Datos Geográficos y Espaciales</strong></div>
+subtitle: |
+  <div style="text-align: center;"><strong>Análisis de datos del clima en finca de aguacate</strong></div>
+author: |
+  <div style="text-align: center;"><strong>Juan David Raigoso Espinosa</strong></div>
+date: |
+  <div style="text-align: center;"><strong>2024-05-14</strong></div>
+output:
+  html_document:
+    theme: united
+    toc: yes
+    toc_float:
+      collapsed: yes
+---
+::: text-justify
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+suppressWarnings({
+  library(readxl)
+  library(tidyverse)
+  library(MASS)
+  library(geoR)
+  library(leaflet)
+  library(rasterVis)
+  library(raster)
+  library(knitr) 
+  })
+```
+
+# Base de datos.
+
+Se carga la base de datos que contiene un total de 21 atributos y 20271 variables en total.
+
+A continuación, se describe las variables:
+
+| Concepto                        | Descripción                                               |
+|--------------------------------|-----------------------------------------------------------|
+| id_arbol                        | Identificador único del árbol.                            |
+| Latitude                       | Latitud geográfica donde se encuentra el árbol.           |
+| Longitude                      | Longitud geográfica donde se encuentra el árbol.          |
+| FORMATTED_DATE_TIME            | Fecha y hora en un formato específico.                    |
+| Psychro_Wet_Bulb_Temperature  | Temperatura de bulbo húmedo psicrométrico.                |
+| Station_Pressure               | Presión en la estación.                                   |
+| Relative_Humidity              | Humedad relativa.                                         |
+| Crosswind                      | Viento cruzado.                                           |
+| Temperature                    | Temperatura.                                              |
+| Barometric_Pressure            | Presión barométrica.                                      |
+| Headwind                       | Viento de frente.                                         |
+| Direction_True                 | Dirección verdadera.                                      |
+| Direction_Mag                  | Dirección magnética.                                      |
+| Wind_Speed                     | Velocidad del viento.                                     |
+| Heat_Stress_Index              | Índice de estrés por calor.                               |
+| Altitude                       | Altitud.                                                  |
+| Dew_Point                      | Punto de rocío.                                           |
+| Density_Altitude               | Altitud de densidad.                                      |
+| Wind_Chill                     | Sensación térmica por el viento.                          |
+| Estado_Fenologico_Predominante | Estado fenológico predominante del árbol.                 |
+| Frutos_Afectados               | Número de frutos afectados.                               |
+
+
+A continuación, se visualiza la tabla que contiene los atributos y registros:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(DT)
+library(kableExtra)
+Datos_Completos_Aguacate <- read_excel("C:/Users/juanr/OneDrive - PUJ Cali/U Javeriana/Segundo Semestre/Anál. de Infor. Geogr. y Espa/Módulo N°2/Unidad N°1/Datos_Completos_Aguacate.xlsx")
+
+DT::datatable(Datos_Completos_Aguacate,
+                    extensions = 'FixedColumns',
+                    rownames= FALSE,
+                    options = list(
+                      pageLength = 10,
+                      language = list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json'),
+                      autoWidth = TRUE,
+                      columnDefs = 
+                        list(list(width = '300px', targets = c(0,7))),
+                      scrollX = TRUE,
+                      escape = T)
+              )
+```
+
+Ahora, como sólo nos piden enfocarnos en el periodo de recolección de los datos de 01/10/2020, se realiza la limpieza y filtro de la columna correspondiente, pasando a tener 534 registros.
+
+```{r, echo=FALSE, message=FALSE}
+# Eliminar la hora y los segundos del formato "21/08/2019 9:36:36 a. m."
+Datos_Completos_Aguacate$FORMATTED_DATE_TIME <- substr(Datos_Completos_Aguacate$FORMATTED_DATE_TIME, 1, 10)
+# Convertir a fecha
+Datos_Completos_Aguacate$FORMATTED_DATE_TIME <- as.Date(Datos_Completos_Aguacate$FORMATTED_DATE_TIME, format = "%d/%m/%Y")
+
+Datos_Filtrados <- filter(Datos_Completos_Aguacate, FORMATTED_DATE_TIME == as.Date("2020-10-1"))
+
+
+DT::datatable(Datos_Filtrados,
+                    extensions = 'FixedColumns',
+                    rownames= FALSE,
+                    options = list(
+                      pageLength = 10,
+                      language = list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json'),
+                      autoWidth = TRUE,
+                      columnDefs = 
+                        list(list(width = '300px', targets = c(0,7))),
+                      scrollX = TRUE,
+                      escape = T)
+              )
+
+```
+
+# Mapas de la ubicación de los árboles en la finca.
+
+En esta parte, se utiliza ggplot2 para crear un gráfico de dispersión que muestra la distribución de los puntos de coordenadas (latitud y longitud) de los árboles en la finca.
+
+```{r,echo=FALSE}
+ggplot(data = Datos_Filtrados, aes(x = Longitude, y = Latitude)) +
+  geom_point() +
+  labs(x = "Longitud", y = "Latitud", title = "Distribución de puntos de coordenadas")
+
+```
+
+También, se crea un mapa interactivo para ver la distribución de los puntos en la finca.
+
+```{r,echo=FALSE}
+library(leaflet.providers)
+
+leaflet() %>% 
+  addProviderTiles(provider = providers$Esri.WorldImagery) %>%
+  addCircleMarkers(
+    lng = Datos_Filtrados$Longitude,
+    lat = Datos_Filtrados$Latitude,
+    radius = 0.2,
+    color = "red"
+  )
+```
+
+# Variable regionalizada.
+
+Se utiliza la variable de temperatura como la variable regionalizada, al analizar los gráficos vemos que la temperatura del terreno varia según la ubicación de los árboles, es decir, la variable varía en función de la ubicación geográfica.
+
+```{r,echo=FALSE}
+df_aguacate_geo <- as.geodata(Datos_Filtrados, coords.col = 3:2, data.col = 9) # Variable regionalizada
+plot(df_aguacate_geo)
+```
+
+Se calcula un resumen de las distancias entre todas las coordenadas geográficas en el conjunto de datos. Esto es útil para comprender la estructura de dispersión de los puntos en el espacio.
+
+```{r,echo=FALSE}
+summary(dist(df_aguacate_geo$coords))
+```
+
+# Variograma.
+
+Al observar el variograma, podemos inferir la existencia de una correlación significativa entre los puntos, dado que estos se encuentran fuera de la banda establecida. Sin embargo, es importante señalar que esta correlación no parece ser muy fuerte. Esto se evidencia en ciertos puntos donde la línea tiende a estabilizarse dentro de las bandas, indicando una menor variabilidad y, por lo tanto, una menor correlación entre los datos.
+
+```{r,echo=FALSE, message=FALSE}
+variograma <- variog(geodata = df_aguacate_geo, uvec = seq(0,0.0009,0.00005), option = "bin")
+
+datos_env <- variog.mc.env(df_aguacate_geo, obj.variog =variograma)
+plot(variograma, pch=16, envelop = datos_env)
+```
+
+# Ajuste Modelo.
+
+```{r,echo=FALSE}
+ini.vals <- expand.grid( seq(2,4,l=10), seq(0.0001,0.00025, l = 10))
+
+modelo_mco_exp <-  variofit(variograma, ini.vals, cov.model = "exponential")
+modelo_mco_gau <- variofit(variograma, ini.vals, cov.model = "gaussian") 
+modelo_mco_shp <- variofit(variograma, ini.vals, cov.model = "spherical")
+
+plot(variograma, pch=16, envelop = datos_env)
+lines(modelo_mco_exp, col = "blue")
+lines(modelo_mco_gau, col = "red")
+lines(modelo_mco_shp, col = "green")
+legend(0.0007, 7, legend=c("Gausiano", "Exponencial", "Esferico"),
+       col=c("red", "blue","green"), lty=1, cex=0.8)
+```
+```{r, echo=FALSE}
+print(paste("MSE modelo Exponencial =", as.character(modelo_mco_exp$value)))
+
+print(paste("MSE modelo Gausiano =", as.character(modelo_mco_gau$value)))
+
+print(paste("MSE modelo Esferico =", as.character(modelo_mco_shp$value)))
+```
+
+
+Podemos observar tanto graficamente como por el valor de MSE que el modelo exponencial es el que mejor se ajusta a los puntos del semivariograma muestral.
+
+
+# Interpolación. 
+
+```{r, echo=FALSE}
+c(min(Datos_Filtrados[,3]),
+  max(Datos_Filtrados[,3]),
+  min(Datos_Filtrados[,2]),
+  max(Datos_Filtrados[,2]))
+```
+
+
+## Predicción Espacial Kriging.
+
+Se crea una cuadrícula regular de puntos para los cuales se realizará la interpolación espacial. Luego, se grafica esta cuadrícula junto con las ubicaciones de los árboles (puntos rojos) en el conjunto de datos.
+
+```{r, echo=FALSE}
+geodatos_grid<-expand.grid( lon=seq(-76.710215,-76.711799,l=100),lat=seq(2.392101 ,2.393634 ,l=100))
+plot(geodatos_grid)
+points(Datos_Filtrados[,3:2],col="red")
+```
+
+```{r, echo=FALSE}
+geodatos_ko<-krige.conv(df_aguacate_geo, loc=geodatos_grid,
+                              krige= krige.control(nugget=0,trend.d="cte",
+                                            trend.l="cte",cov.pars=c(sigmasq=3.0186,
+                                                                     phi=0.0001 )))
+```
+
+Realizamos la interpolación espacial mediante kriging para cada punto de la cuadrícula especificada. Estos resultados de la interpolación permiten visualizar la distribución espacial estimada de la variable de temperatura en toda el área de la finca. Esto proporciona una comprensión más completa de la variable en cuestión y puede ser útil para la toma de decisiones en estudios relacionados con el análisis espacial, como la agricultura, la climatología, entre otros.
+
+```{r, echo=FALSE}
+image(geodatos_ko, main="kriging Predict", xlab="East", ylab="North")
+contour(geodatos_ko, main="kriging Predict", drawlabels=TRUE)
+```
+
+Vemos entonces en la visualización que las áreas más calientes de la finca donde esta el cultivo de aguacate son áreas que tiene entre 26°C a 29°c y las zonas con menor temperatura oscilan entre 23°C a 24C°.
+
+## Desviación estándar de la predicción realizada mediante kriging.
+
+```{r,echo=FALSE}
+image(geodatos_ko, main="kriging StDv Predicted",val=sqrt(geodatos_ko$krige.var), xlab="East", ylab="North")
+contour(geodatos_ko,main="kriging StDv Predict",val=sqrt(geodatos_ko$krige.var), drawlabels=TRUE)
+```
+
+## Imagen raster.
+
+Se crea una imagen raster a partir de las predicciones de kriging.
+
+```{r,echo=FALSE}
+pred=cbind(geodatos_grid,geodatos_ko$predict)
+temp_predict=rasterFromXYZ(cbind(geodatos_grid,geodatos_ko$predict))
+plot(temp_predict)
+```
+
+visualizamos la imagen raster de las predicciones de kriging. Se utiliza el tema de color BuRdTheme para resaltar las variaciones en los valores predichos en el área de la finca.
+
+```{r,echo=FALSE,fig.width=7, fig.height=7}
+levelplot(temp_predict,par.settings =BuRdTheme)
+```
+
+Creamos un mapa que muestra la desviación estándar de las predicciones de kriging realizadas en una cuadrícula espacial. Esta visualización permite identificar las áreas donde las predicciones son más precisas (baja desviación estándar) y donde hay más incertidumbre en las predicciones (alta desviación estándar).
+
+```{r,echo=FALSE,fig.width=7, fig.height=7}
+temp_error=rasterFromXYZ(cbind(geodatos_grid,sqrt(geodatos_ko$krige.var)))
+levelplot(temp_error,par.settings =BuRdTheme)
+```
+
+
+Como no contamos la silueta del área de la finca donde están sembrados los árboles, generamos un polígono convexo a partir de un conjunto de puntos de coordenadas geográficas. El polígono convexo es una forma geométrica que contiene todos los puntos de entrada en su interior y es "convexo" en el sentido de que cualquier línea que conecta dos puntos dentro del polígono está completamente contenida dentro del polígono. En este caso, se establece en el sistema de coordenadas geográficas WGS84.
+
+```{r,echo=FALSE}
+finca <- shapefile("~/silueta_mapa.shp")
+plot(temp_predict)
+plot(finca,add=T)
+```
+Se superpone la imagen raster con la silueta de la finca, la finalidad de superponer la silueta de la finca con la imagen raster de las predicciones de kriging es visualizar cómo se distribuyen las predicciones dentro del contexto geográfico de la finca. Esta superposición permite entender mejor cómo se relacionan las estimaciones de la variable de interés con la forma y la extensión de la finca.
+
+```{r,echo=FALSE}
+temp_predict_finca<-mask(temp_predict,finca)
+plot(temp_predict_finca)
+plot(finca,add=T)
+```
+
+En este caso, las áreas que se muestran de color rojo y amarillo son la zonas donde las temperaturas son mayores (>26°C), seguidamente de las zonas verde y azul donde las temperaturas son un poco más bajas (24°C y 25°C) y las zonas de color blanco es donde se encuentran las temperaturas más bajas de la finca (<23°c).
+
+```{r,echo=FALSE, echo=FALSE,fig.width=7, fig.height=7}
+mapa_finca<-levelplot(temp_predict_finca, 
+          col.regions = rev(colorRampPalette(c("#fd0d03","#fe3b27","#fcff00","#4c953e", "#3318e9", "#1b09f8","#ffffff"))(100)),
+          par.settings = BuRdTheme)
+mapa_finca
+```
+
+Finalmente, mostramos el área de la finca con las predicciones hechas de la temperatura.
+
+```{r,echo=FALSE}
+crs(temp_predict_finca)=crs("+proj=longlat +datum=WGS84")
+leaflet() %>% addTiles() %>% addRasterImage(temp_predict_finca,opacity = 0.8)
+```
+
+  - Distribución de la predicción de la temperatura según ubicación de los árboles de aguacate.
+  
+Para este caso, vemos que los lugares de color azul y aguamarina son los lugares con las temperaturas más altas entre el cultivo de aguacate, donde muy pocos árboles se ubican en estas zonas, la mayoría de arboles se ubican en zonas donde la temperatura es de 22°c a 25°c.
+
+```{r, echo=FALSE}
+library(leaflet.providers)
+
+# Crear el mapa con capa base de Esri.WorldImagery
+mapa <- leaflet() %>% 
+  addProviderTiles(provider = providers$Esri.WorldImagery)
+
+# Añadir capa de puntos con información sobre la temperatura en los popup
+mapa <- mapa %>% 
+  addCircleMarkers(
+    lng = Datos_Filtrados$Longitude, 
+    lat = Datos_Filtrados$Latitude,
+    radius = 0.3, 
+    color = "red",
+    popup = paste("Temperatura:", Datos_Filtrados$Temperature)
+  )
+
+# Añadir capa de raster
+mapa <- mapa %>% 
+  addRasterImage(temp_predict_finca, opacity = 0.8)
+
+# Agregar título al mapa
+mapa <- mapa %>%
+  addControl(html = "<div id='map_title'>Predicción de la temperatura en el cultivo de Aguacate</div>", position = "topright")
+
+# Agregar minimapa
+mapa <- mapa %>%
+  addMiniMap(position = "bottomright")  # Puedes ajustar la posición del minimapa según tus preferencias
+
+# Definir los rangos de temperatura para la leyenda
+temperature_ranges <- c(">29°C","26°C-28°C","24°C-25°C","23°C-22°C","22°<")
+
+# Definir los colores para los rangos de temperatura
+temperature_colors <- c("#005187","#03bb85","#8d4925","#7f0000","#ffff6a")  # Por ejemplo, azul y verde
+
+# Agregar leyenda
+mapa <- mapa %>%
+  addLegend(
+    position = "bottomleft", 
+    colors = temperature_colors,
+    labels = temperature_ranges,
+    opacity = 1
+  )
+
+# Mostrar el mapa
+mapa
+
+```
+
+# Validación cruzada.
+
+En esta sección, se realiza la validación cruzada del modelo de variograma exponencial utilizando. La validación cruzada divide los datos en varios conjuntos de entrenamiento y prueba, y evalúa el rendimiento del modelo en cada conjunto de prueba. Se calcula el error absoluto medio (MAE) como una medida de la precisión del modelo.
+
+```{r, echo=FALSE}
+valida<-xvalid(geodata = df_aguacate_geo,model = modelo_mco_exp)
+MAE<-mean(abs(valida$error))
+MAE
+```
+
+El modelo presenta un error de predicción de acuerdo con la validación cruzada de 0.78 grados.Esta cifra, 0.78 grados, representa una medida de la precisión o la calidad del modelo para predecir los valores de la variable de interés en ubicaciones no muestreadas.Es importante entender el significado de este valor de error. En este contexto, el "error de predicción de 0.78 grados" significa que, en promedio, las predicciones del modelo difieren en aproximadamente 0.78 grados de las observaciones reales. Cuanto menor sea este valor, mejor será la capacidad predictiva del modelo. Por lo tanto, un error de predicción más bajo indica una mayor precisión en las predicciones del modelo.
+:::
